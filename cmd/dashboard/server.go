@@ -29,23 +29,20 @@ type SMSDataResponse struct {
 	Messages []db.SMS       `json:"messages"`
 }
 
-// Cache templates
-var templates = template.Must(template.ParseFiles("./templates/index.html"))
-
-// !!! These package globals are evil and should be refactored away.
-var dispatcher *sender.Sender
-var smsdb *db.DB
-
 /* dashboard handlers */
 
 // dashboard
-func indexHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("--- indexHandler")
-	// templates.ExecuteTemplate(w, "index.html", nil)
-	// Use during development to avoid having to restart server
-	// after every change in HTML
-	t, _ := template.ParseFiles("./templates/index.html")
-	t.Execute(w, nil)
+func indexHandler() func(w http.ResponseWriter, r *http.Request) {
+	t := template.Must(template.ParseFiles("./templates/index.html"))
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		log.Println("--- indexHandler")
+		// templates.ExecuteTemplate(w, "index.html", nil)
+		// Use during development to avoid having to restart server
+		// after every change in HTML
+		//t, _ = template.ParseFiles("./templates/index.html")
+		t.Execute(w, nil)
+	}
 }
 
 // handle all static files based on specified path
@@ -61,73 +58,75 @@ func handleStatic(w http.ResponseWriter, r *http.Request) {
 /* API handlers */
 
 // sendSMSHandler push sms, allowed methods: POST
-func sendSMSHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("--- sendSMSHandler")
-	w.Header().Set("Content-type", "application/json")
+func sendSMSHandler(s *sender.Sender) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		log.Println("--- sendSMSHandler")
+		w.Header().Set("Content-type", "application/json")
 
-	//TODO: validation
-	r.ParseForm()
-	mobile := r.FormValue("mobile")
-	message := r.FormValue("message")
-	uuid := uuid.NewV1()
-	dispatcher.AddMessage(db.SMS{UUID: uuid.String(), Mobile: mobile, Body: message})
+		//TODO: validation
+		r.ParseForm()
+		mobile := r.FormValue("mobile")
+		message := r.FormValue("message")
+		uuid := uuid.NewV1()
+		s.AddMessage(db.SMS{UUID: uuid.String(), Mobile: mobile, Body: message})
 
-	smsresp := SMSResponse{Status: 200, Message: "ok"}
-	var toWrite []byte
-	toWrite, err := json.Marshal(smsresp)
-	if err != nil {
-		log.Println(err)
-		//lets just depend on the server to raise 500
+		smsresp := SMSResponse{Status: 200, Message: "ok"}
+		var toWrite []byte
+		toWrite, err := json.Marshal(smsresp)
+		if err != nil {
+			log.Println(err)
+			//lets just depend on the server to raise 500
+		}
+		w.Write(toWrite)
 	}
-	w.Write(toWrite)
 }
 
 // getLogsHandler dumps JSON data, used by log view. Methods allowed: GET
-func getLogsHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("--- getLogsHandler")
-	// !!! bundle into a single call into gosms
-	// Or split the API into several levels... (or both)
-	messages, _ := smsdb.GetMessages("")
-	summary, _ := smsdb.GetStatusSummary()
-	dayCount, _ := smsdb.GetLast7DaysMessageCount()
-	logs := SMSDataResponse{
-		Status:   200,
-		Message:  "ok",
-		Summary:  summary,
-		DayCount: dayCount,
-		Messages: messages,
+func getLogsHandler(d *db.DB) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		log.Println("--- getLogsHandler")
+		// !!! bundle into a single call into gosms
+		// Or split the API into several levels... (or both)
+		messages, _ := d.GetMessages("")
+		summary, _ := d.GetStatusSummary()
+		dayCount, _ := d.GetLast7DaysMessageCount()
+		logs := SMSDataResponse{
+			Status:   200,
+			Message:  "ok",
+			Summary:  summary,
+			DayCount: dayCount,
+			Messages: messages,
+		}
+		var toWrite []byte
+		toWrite, err := json.Marshal(logs)
+		if err != nil {
+			log.Println(err)
+			//lets just depend on the server to raise 500
+		}
+		w.Header().Set("Content-type", "application/json")
+		w.Write(toWrite)
 	}
-	var toWrite []byte
-	toWrite, err := json.Marshal(logs)
-	if err != nil {
-		log.Println(err)
-		//lets just depend on the server to raise 500
-	}
-	w.Header().Set("Content-type", "application/json")
-	w.Write(toWrite)
 }
 
 /* end API handlers */
 
 // InitServer runs a http server.
-func InitServer(store *db.DB, sender *sender.Sender, host string, port string) error {
+func InitServer(d *db.DB, s *sender.Sender, host string, port string) error {
 	log.Println("--- InitServer ", host, port)
-
-	smsdb = store
-	dispatcher = sender
 
 	r := mux.NewRouter()
 	r.StrictSlash(true)
 
-	r.HandleFunc("/", indexHandler)
+	r.HandleFunc("/", indexHandler())
 
 	// handle static files
 	r.HandleFunc(`/assets/{path:[a-zA-Z0-9=\-\/\.\_]+}`, handleStatic)
 
 	// all API handlers
 	api := r.PathPrefix("/api").Subrouter()
-	api.Methods("GET").Path("/logs/").HandlerFunc(getLogsHandler)
-	api.Methods("POST").Path("/sms/").HandlerFunc(sendSMSHandler)
+
+	api.Methods("GET").Path("/logs/").HandlerFunc(getLogsHandler(d))
+	api.Methods("POST").Path("/sms/").HandlerFunc(sendSMSHandler(s))
 
 	http.Handle("/", r)
 
