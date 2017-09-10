@@ -1,14 +1,12 @@
 package main
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
 	"net/http"
 	"path/filepath"
-	"strings"
 
 	"github.com/gorilla/mux"
 	"github.com/satori/go.uuid"
@@ -35,8 +33,6 @@ type SMSDataResponse struct {
 var templates = template.Must(template.ParseFiles("./templates/index.html"))
 
 // !!! These package globals are evil and should be refactored away.
-var authUsername string
-var authPassword string
 var dispatcher *sender.Sender
 var smsdb *db.DB
 
@@ -114,26 +110,24 @@ func getLogsHandler(w http.ResponseWriter, r *http.Request) {
 /* end API handlers */
 
 // InitServer runs a http server.
-func InitServer(store *db.DB, sender *sender.Sender, host string, port string, username string, password string) error {
+func InitServer(store *db.DB, sender *sender.Sender, host string, port string) error {
 	log.Println("--- InitServer ", host, port)
 
 	smsdb = store
 	dispatcher = sender
-	authUsername = username
-	authPassword = password
 
 	r := mux.NewRouter()
 	r.StrictSlash(true)
 
-	r.HandleFunc("/", use(indexHandler, basicAuth))
+	r.HandleFunc("/", indexHandler)
 
 	// handle static files
-	r.HandleFunc(`/assets/{path:[a-zA-Z0-9=\-\/\.\_]+}`, use(handleStatic, basicAuth))
+	r.HandleFunc(`/assets/{path:[a-zA-Z0-9=\-\/\.\_]+}`, handleStatic)
 
 	// all API handlers
 	api := r.PathPrefix("/api").Subrouter()
-	api.Methods("GET").Path("/logs/").HandlerFunc(use(getLogsHandler, basicAuth))
-	api.Methods("POST").Path("/sms/").HandlerFunc(use(sendSMSHandler, basicAuth))
+	api.Methods("GET").Path("/logs/").HandlerFunc(getLogsHandler)
+	api.Methods("POST").Path("/sms/").HandlerFunc(sendSMSHandler)
 
 	http.Handle("/", r)
 
@@ -141,43 +135,4 @@ func InitServer(store *db.DB, sender *sender.Sender, host string, port string, u
 	log.Println("listening on: ", bind)
 	return http.ListenAndServe(bind, nil)
 
-}
-
-// See https://gist.github.com/elithrar/7600878#comment-955958 for how to extend it to suit simple http.Handler's
-func use(h http.HandlerFunc, middleware ...func(http.HandlerFunc) http.HandlerFunc) http.HandlerFunc {
-	for _, m := range middleware {
-		h = m(h)
-	}
-	return h
-}
-
-func basicAuth(h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if len(authUsername) == 0 {
-			h.ServeHTTP(w, r)
-			return
-		}
-
-		w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
-
-		s := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
-		if len(s) != 2 {
-			http.Error(w, "Not authorized", 401)
-			return
-		}
-
-		b, err := base64.StdEncoding.DecodeString(s[1])
-		if err != nil {
-			http.Error(w, err.Error(), 401)
-			return
-		}
-
-		pair := strings.SplitN(string(b), ":", 2)
-		if len(pair) != 2 || pair[0] != authUsername || pair[1] != authPassword {
-			http.Error(w, "Not authorized", 401)
-			return
-		}
-
-		h.ServeHTTP(w, r)
-	}
 }

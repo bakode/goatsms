@@ -34,9 +34,6 @@ func main() {
 	serverhost, _ := appConfig.Get("SETTINGS", "SERVERHOST")
 	serverport, _ := appConfig.Get("SETTINGS", "SERVERPORT")
 
-	serverusername, _ := appConfig.Get("SETTINGS", "USERNAME")
-	serverpassword, _ := appConfig.Get("SETTINGS", "PASSWORD")
-
 	_numDevices, _ := appConfig.Get("SETTINGS", "DEVICES")
 	numDevices, _ := strconv.Atoi(_numDevices)
 	log.Println("main: number of modems: ", numDevices)
@@ -44,10 +41,14 @@ func main() {
 	modems := make([]*modem.GSMModem, numDevices)
 	for i := 0; i < numDevices; i++ {
 		dev := fmt.Sprintf("DEVICE%v", i)
-		_port, _ := appConfig.Get(dev, "COMPORT")
-		_baud := 115200 //appConfig.Get(dev, "BAUDRATE")
-		_devid, _ := appConfig.Get(dev, "DEVID")
-		modems[i] = modem.New(_port, _baud, _devid)
+		port, _ := appConfig.Get(dev, "COMPORT")
+		baud := 115200
+		_baud, ok := appConfig.Get(dev, "BAUDRATE")
+		if ok {
+			baud, _ = strconv.Atoi(_baud)
+		}
+		devid, _ := appConfig.Get(dev, "DEVID")
+		modems[i] = modem.New(port, baud, devid)
 	}
 
 	_bufferSize, _ := appConfig.Get("SETTINGS", "BUFFERSIZE")
@@ -55,12 +56,6 @@ func main() {
 
 	_bufferLow, _ := appConfig.Get("SETTINGS", "BUFFERLOW")
 	bufferLow, _ := strconv.Atoi(_bufferLow)
-
-	//_loaderTimeout, _ := appConfig.Get("SETTINGS", "MSGTIMEOUT")
-	//loaderTimeout, _ := strconv.Atoi(_loaderTimeout)
-
-	//_loaderCountout, _ := appConfig.Get("SETTINGS", "MSGCOUNTOUT")
-	//loaderCountout, _ := strconv.Atoi(_loaderCountout)
 
 	_loaderTimeoutLong, _ := appConfig.Get("SETTINGS", "MSGTIMEOUTLONG")
 	loaderTimeoutLong, _ := time.ParseDuration(_loaderTimeoutLong + "m")
@@ -78,7 +73,7 @@ func main() {
 	}
 
 	log.Println("main: Initializing server")
-	err = InitServer(store, s, serverhost, serverport, serverusername, serverpassword)
+	err = InitServer(store, s, serverhost, serverport)
 	if err != nil {
 		log.Println("main: ", "Error starting server: ", err.Error(), " Aborting")
 		os.Exit(1)
