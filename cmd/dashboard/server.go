@@ -1,39 +1,44 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/haxpax/gosms"
-	"github.com/gorilla/mux"
-	"github.com/satori/go.uuid"
 	"html/template"
 	"log"
 	"net/http"
 	"path/filepath"
 	"strings"
-	"encoding/base64"
+
+	"github.com/gorilla/mux"
+	"github.com/satori/go.uuid"
+	"github.com/warthog618/goatsms/internal/db"
+	"github.com/warthog618/goatsms/internal/sender"
 )
 
-//reposne structure to /sms
+// SMSResponse is the response structure to /sms requests.
 type SMSResponse struct {
 	Status  int    `json:"status"`
 	Message string `json:"message"`
 }
 
-//response structure to /smsdata/
+// SMSDataResponse defines the response structure to /smsdata/ requests.
 type SMSDataResponse struct {
 	Status   int            `json:"status"`
 	Message  string         `json:"message"`
 	Summary  []int          `json:"summary"`
 	DayCount map[string]int `json:"daycount"`
-	Messages []gosms.SMS    `json:"messages"`
+	Messages []db.SMS       `json:"messages"`
 }
 
 // Cache templates
 var templates = template.Must(template.ParseFiles("./templates/index.html"))
 
+// !!! These package globals are evil and should be refactored away.
 var authUsername string
 var authPassword string
+var dispatcher *sender.Sender
+var smsdb *db.DB
 
 /* dashboard handlers */
 
@@ -59,7 +64,7 @@ func handleStatic(w http.ResponseWriter, r *http.Request) {
 
 /* API handlers */
 
-// push sms, allowed methods: POST
+// sendSMSHandler push sms, allowed methods: POST
 func sendSMSHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("--- sendSMSHandler")
 	w.Header().Set("Content-type", "application/json")
@@ -69,8 +74,7 @@ func sendSMSHandler(w http.ResponseWriter, r *http.Request) {
 	mobile := r.FormValue("mobile")
 	message := r.FormValue("message")
 	uuid := uuid.NewV1()
-	sms := &gosms.SMS{UUID: uuid.String(), Mobile: mobile, Body: message, Retries: 0}
-	gosms.EnqueueMessage(sms, true)
+	dispatcher.AddMessage(db.SMS{UUID: uuid.String(), Mobile: mobile, Body: message})
 
 	smsresp := SMSResponse{Status: 200, Message: "ok"}
 	var toWrite []byte
@@ -82,12 +86,14 @@ func sendSMSHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(toWrite)
 }
 
-// dumps JSON data, used by log view. Methods allowed: GET
+// getLogsHandler dumps JSON data, used by log view. Methods allowed: GET
 func getLogsHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("--- getLogsHandler")
-	messages, _ := gosms.GetMessages("")
-	summary, _ := gosms.GetStatusSummary()
-	dayCount, _ := gosms.GetLast7DaysMessageCount()
+	// !!! bundle into a single call into gosms
+	// Or split the API into several levels... (or both)
+	messages, _ := smsdb.GetMessages("")
+	summary, _ := smsdb.GetStatusSummary()
+	dayCount, _ := smsdb.GetLast7DaysMessageCount()
 	logs := SMSDataResponse{
 		Status:   200,
 		Message:  "ok",
@@ -107,9 +113,12 @@ func getLogsHandler(w http.ResponseWriter, r *http.Request) {
 
 /* end API handlers */
 
-func InitServer(host string, port string, username string, password string) error {
+// InitServer runs a http server.
+func InitServer(store *db.DB, sender *sender.Sender, host string, port string, username string, password string) error {
 	log.Println("--- InitServer ", host, port)
 
+	smsdb = store
+	dispatcher = sender
 	authUsername = username
 	authPassword = password
 
@@ -139,7 +148,6 @@ func use(h http.HandlerFunc, middleware ...func(http.HandlerFunc) http.HandlerFu
 	for _, m := range middleware {
 		h = m(h)
 	}
-
 	return h
 }
 

@@ -1,12 +1,17 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"github.com/haxpax/gosms"
-	"github.com/haxpax/gosms/modem"
 	"log"
 	"os"
 	"strconv"
+	"time"
+
+	"github.com/warthog618/goatsms"
+	"github.com/warthog618/goatsms/internal/db"
+	"github.com/warthog618/goatsms/internal/modem"
+	"github.com/warthog618/goatsms/internal/sender"
 )
 
 func main() {
@@ -19,12 +24,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	db, err := gosms.InitDB("sqlite3", "db.sqlite")
+	store, err := db.New("sqlite3", "db.sqlite")
 	if err != nil {
 		log.Println("main: ", "Error initializing database: ", err, " Aborting")
 		os.Exit(1)
 	}
-	defer db.Close()
+	defer store.Close()
 
 	serverhost, _ := appConfig.Get("SETTINGS", "SERVERHOST")
 	serverport, _ := appConfig.Get("SETTINGS", "SERVERPORT")
@@ -34,16 +39,15 @@ func main() {
 
 	_numDevices, _ := appConfig.Get("SETTINGS", "DEVICES")
 	numDevices, _ := strconv.Atoi(_numDevices)
-	log.Println("main: number of devices: ", numDevices)
+	log.Println("main: number of modems: ", numDevices)
 
-	var modems []*modem.GSMModem
+	modems := make([]*modem.GSMModem, numDevices)
 	for i := 0; i < numDevices; i++ {
 		dev := fmt.Sprintf("DEVICE%v", i)
 		_port, _ := appConfig.Get(dev, "COMPORT")
 		_baud := 115200 //appConfig.Get(dev, "BAUDRATE")
 		_devid, _ := appConfig.Get(dev, "DEVID")
-		m := modem.New(_port, _baud, _devid)
-		modems = append(modems, m)
+		modems[i] = modem.New(_port, _baud, _devid)
 	}
 
 	_bufferSize, _ := appConfig.Get("SETTINGS", "BUFFERSIZE")
@@ -52,20 +56,29 @@ func main() {
 	_bufferLow, _ := appConfig.Get("SETTINGS", "BUFFERLOW")
 	bufferLow, _ := strconv.Atoi(_bufferLow)
 
-	_loaderTimeout, _ := appConfig.Get("SETTINGS", "MSGTIMEOUT")
-	loaderTimeout, _ := strconv.Atoi(_loaderTimeout)
+	//_loaderTimeout, _ := appConfig.Get("SETTINGS", "MSGTIMEOUT")
+	//loaderTimeout, _ := strconv.Atoi(_loaderTimeout)
 
-	_loaderCountout, _ := appConfig.Get("SETTINGS", "MSGCOUNTOUT")
-	loaderCountout, _ := strconv.Atoi(_loaderCountout)
+	//_loaderCountout, _ := appConfig.Get("SETTINGS", "MSGCOUNTOUT")
+	//loaderCountout, _ := strconv.Atoi(_loaderCountout)
 
 	_loaderTimeoutLong, _ := appConfig.Get("SETTINGS", "MSGTIMEOUTLONG")
-	loaderTimeoutLong, _ := strconv.Atoi(_loaderTimeoutLong)
+	loaderTimeoutLong, _ := time.ParseDuration(_loaderTimeoutLong + "m")
 
-	log.Println("main: Initializing worker")
-	gosms.InitWorker(modems, bufferSize, bufferLow, loaderTimeout, loaderCountout, loaderTimeoutLong)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	log.Println("main: Initializing sender")
+	s := sender.New(bufferSize, bufferLow)
+	go s.Run(ctx, store, loaderTimeoutLong)
+
+	log.Println("main: Initializing modems")
+	for _, m := range modems {
+		m.Connect(ctx, s)
+	}
 
 	log.Println("main: Initializing server")
-	err = InitServer(serverhost, serverport, serverusername, serverpassword)
+	err = InitServer(store, s, serverhost, serverport, serverusername, serverpassword)
 	if err != nil {
 		log.Println("main: ", "Error starting server: ", err.Error(), " Aborting")
 		os.Exit(1)
