@@ -48,7 +48,7 @@ const schemaVersion string = "goatsms v1"
 
 // New creates a database client.
 // If it does not already exist then it is created and initialised.
-// If it does exist then  it checks that it has the correct schema version.
+// If it does exist then it checks that it has the correct schema version.
 func New(driver, dbname string) (*DB, error) {
 	init := true
 	sqldb, err := sql.Open(driver, dbname)
@@ -82,17 +82,18 @@ func (db *DB) init() error {
 		`CREATE TABLE messages (
 	                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
 	                uuid char(32) UNIQUE NOT NULL,
-	                message char(160)   NOT NULL,
-	                mobile   char(15)    NOT NULL,
+	                message char(160) NOT NULL,
+	                mobile   char(15) NOT NULL,
 	                status  INTEGER DEFAULT 0,
 	                retries INTEGER DEFAULT 0,
 	                device string NULL,
 	                created_at TIMESTAMP default CURRENT_TIMESTAMP,
 	                updated_at TIMESTAMP
 	            );`,
-		"CREATE INDEX IF NOT EXISTS messages_status ON messages (status)",
+		"CREATE INDEX messages_status ON messages (status)",
 		`CREATE TABLE schema_version (
-		version char(16)   NOT NULL,
+		id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+		version char(16) NOT NULL,
 		created_at TIMESTAMP default CURRENT_TIMESTAMP
 		);`,
 		"INSERT INTO schema_version(version) VALUES('" + schemaVersion + "')",

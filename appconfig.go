@@ -1,11 +1,12 @@
-package gosms
+package goatsms
 
 import (
 	"errors"
 	"fmt"
-	ini "github.com/vaughan0/go-ini"
 	"strconv"
 	"strings"
+
+	ini "github.com/vaughan0/go-ini"
 )
 
 /* ===== Application Configuration ===== */
@@ -26,14 +27,13 @@ func GetConfig(configFilePath string) (ini.File, error) {
 func testConfig(appConfig ini.File) (bool, error) {
 	//test if required parameters are present and are valid
 
-	requiredFields := []setting{{"SETTINGS", "SERVERHOST"},
+	requiredFields := []setting{
+		{"SETTINGS", "SERVERHOST"},
 		{"SETTINGS", "SERVERPORT"},
 		{"SETTINGS", "RETRIES"},
 		{"SETTINGS", "DEVICES"},
 		{"SETTINGS", "BUFFERSIZE"},
 		{"SETTINGS", "BUFFERLOW"},
-		{"SETTINGS", "MSGTIMEOUT"},
-		{"SETTINGS", "MSGCOUNTOUT"},
 		{"SETTINGS", "MSGTIMEOUTLONG"},
 	}
 

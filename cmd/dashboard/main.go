@@ -16,15 +16,15 @@ import (
 
 func main() {
 
-	log.Println("main: ", "Initializing gosms")
+	log.Println("main: ", "Initializing goatsms")
 	//load the config, abort if required config is not preset
-	appConfig, err := gosms.GetConfig("conf.ini")
+	appConfig, err := goatsms.GetConfig("conf.ini")
 	if err != nil {
 		log.Println("main: ", "Invalid config: ", err.Error(), " Aborting")
 		os.Exit(1)
 	}
 
-	store, err := db.New("sqlite3", "db.sqlite")
+	store, err := db.New("sqlite3", "goatsms.sqlite")
 	if err != nil {
 		log.Println("main: ", "Error initializing database: ", err, " Aborting")
 		os.Exit(1)

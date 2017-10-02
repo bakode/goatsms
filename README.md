@@ -1,5 +1,32 @@
-gosms
+goatsms
 -----
+
+This was an experimental fork of [gosms](https://github.com/haxpax/gosms).
+My immediate intent was to replace the modem driver with something more robust,
+and then restructuring the internals and adding new features like:
+
+- cancellation
+- deletion
+- multi-part SMSs
+- receiving SMSs
+- better support for reverse proxies
+
+So far I've:
+
+- switched to my own [modem driver](https://github.com/warthog618/modem)
+- re-organised the directory layout
+- replaced worker with sender
+- dropped http basicAuth support - use a reverse proxy instead
+- added updatedb to migrate gosms databases to goatsms.
+
+My initial intent was for this fork to merge back into gosms, but as gosms
+appears mostly idle, and with my changes already rewriting core functionality,
+like worker, I doubt that will ever happen, hence the rename to goatsms.
+
+This is still very much a work in progress, but might be worth playing with if
+you are having problems with gosms.
+
+The rest is drawn directly from gosms...
 
 Your own local SMS gateway
 ==========================
@@ -23,7 +50,7 @@ or have minimal requirements for personal / internal use and such
 deployment
 ----------
 - Update conf.ini `[DEVICES]` section with your modem's COM port.
-  for ex. `COM10` or `/dev/USBtty2`
+  for ex. `COM10` or `/dev/ttyUSB2`
 - Run
 
 API specification
@@ -101,5 +128,3 @@ On Windows
 - go build
 
 run dashboard executable. Copy assets, templates, conf.ini, dashboard[.exe] if you want to move to another directory db.sqlite is created at first run if not present, copy that too if its there
-
-

@@ -35,9 +35,7 @@ type SMSDataResponse struct {
 func indexHandler() func(w http.ResponseWriter, r *http.Request) {
 	t := template.Must(template.ParseFiles("./templates/index.html"))
 	return func(w http.ResponseWriter, r *http.Request) {
-
 		log.Println("--- indexHandler")
-		// templates.ExecuteTemplate(w, "index.html", nil)
 		// Use during development to avoid having to restart server
 		// after every change in HTML
 		//t, _ = template.ParseFiles("./templates/index.html")
@@ -45,9 +43,9 @@ func indexHandler() func(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handle all static files based on specified path
+// staticHandler handles all static files based on specified path
 // for now its /assets
-func handleStatic(w http.ResponseWriter, r *http.Request) {
+func staticHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	static := vars["path"]
 	http.ServeFile(w, r, filepath.Join("./assets", static))
@@ -71,7 +69,6 @@ func sendSMSHandler(s *sender.Sender) func(w http.ResponseWriter, r *http.Reques
 		s.AddMessage(db.SMS{UUID: uuid.String(), Mobile: mobile, Body: message})
 
 		smsresp := SMSResponse{Status: 200, Message: "ok"}
-		var toWrite []byte
 		toWrite, err := json.Marshal(smsresp)
 		if err != nil {
 			log.Println(err)
@@ -85,8 +82,6 @@ func sendSMSHandler(s *sender.Sender) func(w http.ResponseWriter, r *http.Reques
 func getLogsHandler(d *db.DB) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Println("--- getLogsHandler")
-		// !!! bundle into a single call into gosms
-		// Or split the API into several levels... (or both)
 		messages, _ := d.GetMessages("")
 		summary, _ := d.GetStatusSummary()
 		dayCount, _ := d.GetLast7DaysMessageCount()
@@ -97,7 +92,6 @@ func getLogsHandler(d *db.DB) func(w http.ResponseWriter, r *http.Request) {
 			DayCount: dayCount,
 			Messages: messages,
 		}
-		var toWrite []byte
 		toWrite, err := json.Marshal(logs)
 		if err != nil {
 			log.Println(err)
@@ -120,7 +114,7 @@ func InitServer(d *db.DB, s *sender.Sender, host string, port string) error {
 	r.HandleFunc("/", indexHandler())
 
 	// handle static files
-	r.HandleFunc(`/assets/{path:[a-zA-Z0-9=\-\/\.\_]+}`, handleStatic)
+	r.HandleFunc(`/assets/{path:[a-zA-Z0-9=\-\/\.\_]+}`, staticHandler)
 
 	// all API handlers
 	api := r.PathPrefix("/api").Subrouter()
@@ -133,5 +127,4 @@ func InitServer(d *db.DB, s *sender.Sender, host string, port string) error {
 	bind := fmt.Sprintf("%s:%s", host, port)
 	log.Println("listening on: ", bind)
 	return http.ListenAndServe(bind, nil)
-
 }
