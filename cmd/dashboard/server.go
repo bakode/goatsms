@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"path/filepath"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
-	"github.com/satori/go.uuid"
 	"github.com/warthog618/goatsms/internal/db"
 	"github.com/warthog618/goatsms/internal/sender"
 )
@@ -65,7 +65,7 @@ func sendSMSHandler(s *sender.Sender) func(w http.ResponseWriter, r *http.Reques
 		r.ParseForm()
 		mobile := r.FormValue("mobile")
 		message := r.FormValue("message")
-		uuid := uuid.NewV1()
+		uuid := uuid.New()
 		s.AddMessage(db.SMS{UUID: uuid.String(), Mobile: mobile, Body: message})
 
 		smsresp := SMSResponse{Status: 200, Message: "ok"}
