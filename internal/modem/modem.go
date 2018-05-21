@@ -11,8 +11,12 @@ import (
 	"github.com/warthog618/modem/gsm"
 	"github.com/warthog618/modem/serial"
 	"github.com/warthog618/modem/trace"
+	"github.com/warthog618/sms/encoding/tpdu"
+	"github.com/warthog618/sms/ms/message"
+	"github.com/warthog618/sms/ms/sar"
 )
 
+// GSMModem represents a physical GSM modem.
 type GSMModem struct {
 	comPort  string
 	baudrate int
@@ -20,15 +24,21 @@ type GSMModem struct {
 	trace    *log.Logger
 }
 
+// New creates a new GSMModem.
 func New(comPort string, baudrate int, deviceID string) (modem *GSMModem) {
 	return &GSMModem{comPort: comPort, baudrate: baudrate, deviceID: deviceID}
 }
 
+// SMSDispatcher represents the source of SMSs to be sent via the modem.
 type SMSDispatcher interface {
 	Req() <-chan db.SMS
 	Rsp() chan<- db.SMS
 }
 
+// Connect binds the GSMModem to the SMSDispatcher.
+// The GSMModem will then commence processing the SMSDispatcher Req chan,
+// and return results via the Rsp chan.
+// The connection remains until the modem is closed or the context is Done.
 func (m *GSMModem) Connect(ctx context.Context, ss SMSDispatcher) {
 	go m.monitor(ctx, ss)
 }
@@ -60,6 +70,7 @@ func (m *GSMModem) monitor(ctx context.Context, ss SMSDispatcher) {
 			} else {
 				modem = gsm.New(s)
 			}
+			modem.SetPDUMode()
 			ictx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			err = modem.Init(ictx)
 			cancel()
@@ -86,7 +97,16 @@ func (m *GSMModem) monitor(ctx context.Context, ss SMSDispatcher) {
 
 // Sender is responsible for taking SMSs from the req channel, sending them
 // via the modem, and returning the updated SMS to the response channel.
+// The SMS is sent using PDU mode to support UTF-8 and large messages.
+// If the SMS is too large to fit in one PDU then it will be sent in several,
+// using the same modem.
 func (m *GSMModem) sender(ctx context.Context, modem *gsm.GSM, req <-chan db.SMS, rsp chan<- db.SMS) {
+	ude, err := tpdu.NewUDEncoder()
+	if err != nil {
+		log.Fatal(err)
+	}
+	ude.AddAllCharsets()
+	me := message.NewEncoder(ude, sar.NewSegmenter())
 	for {
 		select {
 		case <-ctx.Done():
@@ -98,9 +118,7 @@ func (m *GSMModem) sender(ctx context.Context, modem *gsm.GSM, req <-chan db.SMS
 				return
 			}
 			log.Println("sending: ", sms.UUID, m.deviceID)
-			tctx, cancel := context.WithTimeout(ctx, 15*time.Second) // !!! configurable
-			_, err := modem.SendSMS(tctx, sms.Mobile, sms.Body)
-			cancel()
+			err := sendSMS(ctx, modem, me, sms.Mobile, sms.Body)
 			// a bit leary about handling SMS state here - would prefer to do that in sender.go
 			// but then the response sent to the sender becomes more complex.
 			switch err {
@@ -127,4 +145,26 @@ func (m *GSMModem) sender(ctx context.Context, modem *gsm.GSM, req <-chan db.SMS
 			rsp <- sms
 		}
 	}
+}
+
+func sendSMS(ctx context.Context, g *gsm.GSM, me *message.Encoder, number string, msg string) error {
+	pdus, err := me.Encode(number, msg)
+	if err != nil {
+		return err
+	}
+	for i, p := range pdus {
+		tp, err := p.MarshalBinary()
+		if err != nil {
+			return err
+		}
+		tctx, cancel := context.WithTimeout(ctx, 15*time.Second) // !!! make configurable
+		mr, err := g.SendSMSPDU(tctx, tp)
+		cancel()
+		if err != nil {
+			// !!! check CPIN?? on failure to determine root cause??  If ERROR 302
+			return err
+		}
+		log.Printf("PDU %d: %v\n", i+1, mr) // !!! use GSMModem trace??
+	}
+	return nil
 }
