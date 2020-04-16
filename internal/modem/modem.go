@@ -11,9 +11,7 @@ import (
 	"github.com/warthog618/modem/gsm"
 	"github.com/warthog618/modem/serial"
 	"github.com/warthog618/modem/trace"
-	"github.com/warthog618/sms/encoding/tpdu"
-	"github.com/warthog618/sms/ms/message"
-	"github.com/warthog618/sms/ms/sar"
+	"github.com/warthog618/sms"
 )
 
 // GSMModem represents a physical GSM modem.
@@ -101,12 +99,6 @@ func (m *GSMModem) monitor(ctx context.Context, ss SMSDispatcher) {
 // If the SMS is too large to fit in one PDU then it will be sent in several,
 // using the same modem.
 func (m *GSMModem) sender(ctx context.Context, modem *gsm.GSM, req <-chan db.SMS, rsp chan<- db.SMS) {
-	ude, err := tpdu.NewUDEncoder()
-	if err != nil {
-		log.Fatal(err)
-	}
-	ude.AddAllCharsets()
-	me := message.NewEncoder(ude, sar.NewSegmenter())
 	for {
 		select {
 		case <-ctx.Done():
@@ -118,7 +110,7 @@ func (m *GSMModem) sender(ctx context.Context, modem *gsm.GSM, req <-chan db.SMS
 				return
 			}
 			log.Println("sending: ", sms.UUID, m.deviceID)
-			err := sendSMS(ctx, modem, me, sms.Mobile, sms.Body)
+			err := sendSMS(ctx, modem, sms.Mobile, sms.Body)
 			// a bit leary about handling SMS state here - would prefer to do that in sender.go
 			// but then the response sent to the sender becomes more complex.
 			switch err {
@@ -147,8 +139,8 @@ func (m *GSMModem) sender(ctx context.Context, modem *gsm.GSM, req <-chan db.SMS
 	}
 }
 
-func sendSMS(ctx context.Context, g *gsm.GSM, me *message.Encoder, number string, msg string) error {
-	pdus, err := me.Encode(number, msg)
+func sendSMS(ctx context.Context, g *gsm.GSM, number string, msg string) error {
+	pdus, err := sms.Encode([]byte(msg), sms.To(number), sms.WithAllCharsets)
 	if err != nil {
 		return err
 	}
