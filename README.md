@@ -1,13 +1,25 @@
 # goatsms
 
 This was an experimental fork of [gosms](https://github.com/haxpax/gosms).
+My initial intent was for this fork to merge back into gosms, but as gosms
+appears mostly idle, and with my changes already rewriting core functionality,
+like worker, I doubt that will ever happen, hence the rename to goatsms.
+
+This is still very much a work in progress, but might be worth playing with if
+you are having problems with gosms.
+
 My immediate intent was to replace the modem driver with something more robust,
 and then restructuring the internals and adding new features like:
 
 - cancellation
 - deletion
+- use PDU mode to the modem to provide more control over the SMS being sent
+- support UTF-8 messages and all language maps in the SMS spec
+- splitting large messages into multiple SMS PDUs
 - receiving SMSs
 - better support for reverse proxies
+- gRPC interface
+- tests
 
 So far I've:
 
@@ -20,14 +32,19 @@ So far I've:
 - added support for UTF-8 messages, including emoticons 😁, and encoding using UCS-2 or National Language Shift tables as suitable.
 - added support for splitting large messages into multi-part SMS PDUs.
 
-My initial intent was for this fork to merge back into gosms, but as gosms
-appears mostly idle, and with my changes already rewriting core functionality,
-like worker, I doubt that will ever happen, hence the rename to goatsms.
+## Migration from GoSMS
 
-This is still very much a work in progress, but might be worth playing with if
-you are having problems with gosms.
+The goatsms database schema differs from the gosms datbase schema, as it has added a version table provide support for subsequent schema changes.
+As a result, if you are migrating from GoSMS you need to run the updatedb command on your GoSMS database to convert it to the GoatSMS schema.
 
-The rest is drawn directly from gosms...
+You can convert your database with the following command:
+
+```sh
+cp gosms.sqlite goatsms.sqlite
+updatedb -from_gosms -d goatsms.sqlite
+```
+
+The rest of the README is drawn directly from gosms and is still mostly valid, but I'll get around to reworking it sometime...
 
 ## Your own local SMS gateway
 
